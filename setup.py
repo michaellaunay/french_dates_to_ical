@@ -38,5 +38,5 @@ setup(name='french_dates_to_ical',
                   ],
                   
       #setup_requires = ['python-stdeb', 'fakeroot', 'python-all'],
-      install_requires = ['setuptools', 'docutils>=0.3', 'parsimonious'],
+      install_requires = ['setuptools', 'docutils>=0.3', 'parsimonious', 'pytest'],
      )

@@ -6,6 +6,7 @@
 # file: french_dates_grammar.py
 # author: Michael Launay
 
+import datetime
 
 from parsimonious import Grammar, NodeVisitor
 
@@ -27,17 +28,26 @@ exp_tous = """
 EXP_TOUS = TOUS_LES_JOURS_A / TOUS_LES_JOURS_SAUF / TOUS_LES_JOURS / TOUS_LES_NOMS_JOURS_A / TOUS_LES_NOMS_JOURS
 TOUS_LES_JOURS_A = TOUS_LES_JOURS ESPACE A ESPACE HORAIRE
 TOUS_LES_NOMS_JOURS_A = TOUS_LES_NOMS_JOURS ESPACE A ESPACE HORAIRE
-TOUS_LES_JOURS_SAUF = TOUS_LES_JOURS_SAUF_LE / TOUS_LES_JOURS_SAUF_LES
-TOUS_LES_JOURS_SAUF_LE = TOUS_LES_JOURS ESPACE SAUF ESPACE LE_DATE
-TOUS_LES_JOURS_SAUF_LES = TOUS_LES_JOURS ESPACE SAUF ESPACE LES_DATES
+TOUS_LES_JOURS_SAUF = TOUS_LES_JOURS ESPACE EXP_SAUF
 TOUS_LES_NOMS_JOURS = TOUS_LES ESPACE NOMS_JOURS
+"""
+
+exp_sauf = """
+EXP_SAUF = SAUF_LES / SAUF_LE
+SAUF_LES = SAUF ESPACE LES_DATES
+SAUF_LE = SAUF ESPACE LE_DATE
 """
 
 exp_s = """
 S = EXP_LES / EXP_LE / EXP_TOUS
 """
 
-french_dates_grammar = exp_s + exp_les + exp_le + exp_tous +"""
+french_dates_grammar = exp_s \
+       + exp_les \
+       + exp_le \
+       + exp_tous \
+       + exp_sauf \
+       + """
 HORAIRE = HEURES HEURE_SYMBOLE MINUTES
 LISTE_JOURS = NOMS_JOURS (VIRGULE ESPACE NOMS_JOURS)+
 DATE = JOUR DATE_SEPARATEUR MOIS DATE_SEPARATEUR ANNEE
@@ -99,12 +109,57 @@ for name in expression_names:
     if visit_name not in dir_visitor:
         setattr(visitor, visit_name, trace_method(do_nothing, visit_name))
 
+def main(string, base_time = None):
+    if not base_time:
+        base_time = datetime.datetime.today()
+    root = grammar.parse(string)
+    gv = GrammarTraceVisitor()
+    gv.visit(root)
+    return gv, root
+
+
+def get_dates(node, context):
+    result = [] 
+    expr_name = node.expr_name
+    if expr_name == "DATE":
+        date = {}
+        for sub_node in node.children:
+            sub_expr_name = sub_node.expr_name
+            if sub_expr_name in ["JOUR", "MOIS", "ANNEE"]:
+                date[sub_expr_name] = sub_node.text
+        if "ANNEE" not in date:
+            if "ANNEE" not in context:
+                date["ANNEE"] = datetime.datimetime.now().year
+            else:
+                date["ANNEE"] = context["ANNEE"]
+        if len(date["ANNEE"]) == 2:
+            year = date["ANNEE"]
+            date["ANNEE"]="20"+date["ANNEE"]
+        return ["{0}{1}{2}T000000".format(date["ANNEE"],date["MOIS"],date["JOUR"])]
+    else :
+        for node in node.children:
+            result.extend(get_dates(node, context))
+    return result
+
+
+def get_ical(node, context):
+    result = []
+    expr_name = node.expr_name
+    if expr_name == "LE_DATE_A":
+        ical_res = "RDATE;VALUE=DATE-TIME:" + ",".join(get_dates(node, context))
+        result = [ical_res]
+    else :
+        for node in node.children:
+            result.extend(get_ical(node, context))
+    return result
+
 if __name__ == "__main__":
     import sys
     while 1 :
         print("Saisisez une expression à tester : ")
         s = sys.stdin.readline()[:-1]
-        root = grammar.parse(s)
-        hv = GrammarTraceVisitor()
-        hv.visit(root)
+        visitor,root = main(s)
+        print(get_dates(root, {"ANNEE":"2015"}))
+        print(get_ical(root, {"ANNEE":"2015"}))
+        import pdb; pdb.set_trace()
 
