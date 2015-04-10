@@ -10,6 +10,8 @@ import datetime
 
 from parsimonious import Grammar, NodeVisitor
 
+DEBUGG_VISITOR = True #False
+
 exp_le = """
 EXP_LE = LE_DATE_A / LE_DATE_PERIODE / LE_DATE
 LE_DATE_A = LE_DATE ESPACE A ESPACE HORAIRE
@@ -67,7 +69,7 @@ HEURE_SYMBOLE = "h"
 MINUTES = ~"[0-5][0-9]"
 JOUR = ~"[1-2][0-9]" / ~"3[0-1]" / ~"0?[1-9]"
 MOIS = ~"1[0-2]" / ~"0?[1-9]"
-ANNEE = ~"20[0-9][0-9]" / ~"19[0-9][0-9]"
+ANNEE = ~"2[0-9][0-9][0-9]" / ~"19[0-9][0-9]" / ~"[0-9][0-9]"
 VIRGULE = ","
 RANG = "1er" / "2ème" / "3ème" / "4ème" / "5ème"
 NOMS_RANG = "premier" / "deuxième" / "troisième" / "quatrième" / "cinquième"
@@ -107,38 +109,53 @@ for name in expression_names:
     dir_visitor = dir(visitor)
     visit_name = "visit_%s"%name
     if visit_name not in dir_visitor:
-        setattr(visitor, visit_name, trace_method(do_nothing, visit_name))
-
-def main(string, base_time = None):
-    if not base_time:
-        base_time = datetime.datetime.today()
-    root = grammar.parse(string)
-    gv = GrammarTraceVisitor()
-    gv.visit(root)
-    return gv, root
+        if DEBUGG_VISITOR:
+            setattr(visitor, visit_name, trace_method(do_nothing, visit_name))
+        else:
+            setattr(visitor, visit_name, do_nothing)
 
 
 def get_dates(node, context):
     result = [] 
     expr_name = node.expr_name
     if expr_name == "DATE":
-        date = {}
+        now = datetime.datetime.now()
+        date = {"ANNEE": context and "ANNEE" in context and context["ANNEE"] \
+                    or "%0.4d"%(now.year),
+                "MOIS" : "01",
+                "JOUR" : "01"
+                }
         for sub_node in node.children:
             sub_expr_name = sub_node.expr_name
             if sub_expr_name in ["JOUR", "MOIS", "ANNEE"]:
-                date[sub_expr_name] = sub_node.text
-        if "ANNEE" not in date:
-            if "ANNEE" not in context:
-                date["ANNEE"] = datetime.datimetime.now().year
-            else:
-                date["ANNEE"] = context["ANNEE"]
-        if len(date["ANNEE"]) == 2:
-            year = date["ANNEE"]
-            date["ANNEE"]="20"+date["ANNEE"]
+                text = sub_node.text
+                if len(text) < len(date[sub_expr_name]):
+                    #expand short date by using default prefix
+                    text = date[sub_expr_name][0:len(text)] + text
+                date[sub_expr_name] = text
         return ["{0}{1}{2}T000000".format(date["ANNEE"],date["MOIS"],date["JOUR"])]
     else :
         for node in node.children:
             result.extend(get_dates(node, context))
+    return result
+
+
+def get_hours(node, context):
+    result = []
+    expr_name = node.expr_name
+    if expr_name == "HORAIRE":
+        hour = {"HEURES":"00", "MINUTES":"00", "SECONDES":"00"}
+        for sub_node in node.children:
+            sub_expr_name = sub_node.expr_name
+            if sub_expr_name in ["HEURES", "MINUTES", "SECONDES"]:
+                text = sub_node.text
+                if len(text) < len(hour[sub_expr_name]):
+                    text = hour[sub_expr_name][0:len(text)] + text
+                hour[sub_expr_name] = text
+        return ["T{0}{1}{2}".format(hour["HEURES"], hour["MINUTES"], hour["SECONDES"])]
+    else:
+        for node in node.children:
+            result.extend(get_hours(node, context))
     return result
 
 
@@ -147,19 +164,31 @@ def get_ical(node, context):
     expr_name = node.expr_name
     if expr_name == "LE_DATE_A":
         ical_res = "RDATE;VALUE=DATE-TIME:" + ",".join(get_dates(node, context))
-        result = [ical_res]
+        ical_hour = get_hours(node, context)
+
+        if ical_hour:
+            result.append(ical_res.replace("T000000", ical_hour[0]))
+        else:
+            result.append(ical_res)
     else :
         for node in node.children:
             result.extend(get_ical(node, context))
     return result
+
+
+def main(string, base_time = None):
+    if not base_time:
+        base_time = datetime.datetime.today()
+    root = grammar.parse(string.lower())
+    gv = GrammarTraceVisitor()
+    gv.visit(root)
+    return get_ical(root, {"ANNEE":"2015", "MOIS":"01", "JOUR":"01"})
+
 
 if __name__ == "__main__":
     import sys
     while 1 :
         print("Saisisez une expression à tester : ")
         s = sys.stdin.readline()[:-1]
-        visitor,root = main(s)
-        print(get_dates(root, {"ANNEE":"2015"}))
-        print(get_ical(root, {"ANNEE":"2015"}))
-        import pdb; pdb.set_trace()
+        print(main(s))
 
