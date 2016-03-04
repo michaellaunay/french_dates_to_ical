@@ -1,16 +1,17 @@
 #!/usr/bin/env python
 # coding=utf-8
-# Copyright (c) 2014 by Ecreall under licence AGPL terms,
+# Copyright (c) 2014 by Ecreall under licence AGPL V3 terms,
 # avalaible on http://www.gnu.org/licenses/agpl.html
 #
 # file: french_dates_grammar.py
 # author: Michael Launay
 
+import sys
 import datetime
 
 from parsimonious import Grammar, NodeVisitor
 
-DEBUGG_VISITOR = True #False
+DEBUGG_VISITOR = False # True #In debug mode, print messages for all node
 
 exp_le = """
 EXP_LE = LE_DATE_A / LE_DATE_PERIODE / LE_DATE
@@ -50,7 +51,9 @@ french_dates_grammar = exp_s \
        + exp_tous \
        + exp_sauf \
        + """
-HORAIRE = HEURES HEURE_SYMBOLE MINUTES
+HORAIRE = HEURES_SYMBOLE_MINUTES / HEURES_SYMBOLE
+HEURES_SYMBOLE_MINUTES = HEURES HEURE_SYMBOLE MINUTES
+HEURES_SYMBOLE = HEURES HEURE_SYMBOLE
 LISTE_JOURS = NOMS_JOURS (VIRGULE ESPACE NOMS_JOURS)+
 DATE = JOUR DATE_SEPARATEUR MOIS DATE_SEPARATEUR ANNEE
 DATES = DATE (VIRGULE ESPACE DATE)+
@@ -116,7 +119,7 @@ for name in expression_names:
 
 
 def get_dates(node, context):
-    result = [] 
+    result = []
     expr_name = node.expr_name
     if expr_name == "DATE":
         now = datetime.datetime.now()
@@ -124,7 +127,7 @@ def get_dates(node, context):
                     or "%0.4d"%(now.year),
                 "MOIS" : "01",
                 "JOUR" : "01"
-                }
+               }
         for sub_node in node.children:
             sub_expr_name = sub_node.expr_name
             if sub_expr_name in ["JOUR", "MOIS", "ANNEE"]:
@@ -133,8 +136,8 @@ def get_dates(node, context):
                     #expand short date by using default prefix
                     text = date[sub_expr_name][0:len(text)] + text
                 date[sub_expr_name] = text
-        return ["{0}{1}{2}T000000".format(date["ANNEE"],date["MOIS"],date["JOUR"])]
-    else :
+        return ["{0}{1}{2}T000000".format(date["ANNEE"], date["MOIS"], date["JOUR"])]
+    else:
         for node in node.children:
             result.extend(get_dates(node, context))
     return result
@@ -147,11 +150,15 @@ def get_hours(node, context):
         hour = {"HEURES":"00", "MINUTES":"00", "SECONDES":"00"}
         for sub_node in node.children:
             sub_expr_name = sub_node.expr_name
-            if sub_expr_name in ["HEURES", "MINUTES", "SECONDES"]:
-                text = sub_node.text
-                if len(text) < len(hour[sub_expr_name]):
-                    text = hour[sub_expr_name][0:len(text)] + text
-                hour[sub_expr_name] = text
+            if sub_expr_name in ["HEURES_SYMBOLE_MINUTES", "HEURES_SYMBOLE"]:
+                for sub_sub_node in sub_node.children:
+                    sub_sub_expr_name = sub_sub_node.expr_name
+                    if sub_sub_expr_name in ["HEURES", "MINUTES", "SECONDES"]:
+                        text = sub_sub_node.text
+                        if len(text) < len(hour[sub_sub_expr_name]):
+                            text = hour[sub_sub_expr_name][0:len(text)] + text
+                        hour[sub_sub_expr_name] = text
+
         return ["T{0}{1}{2}".format(hour["HEURES"], hour["MINUTES"], hour["SECONDES"])]
     else:
         for node in node.children:
@@ -170,13 +177,13 @@ def get_ical(node, context):
             result.append(ical_res.replace("T000000", ical_hour[0]))
         else:
             result.append(ical_res)
-    else :
+    else:
         for node in node.children:
             result.extend(get_ical(node, context))
     return result
 
 
-def main(string, base_time = None):
+def main(string, base_time=None):
     if not base_time:
         base_time = datetime.datetime.today()
     root = grammar.parse(string.lower())
@@ -186,8 +193,7 @@ def main(string, base_time = None):
 
 
 if __name__ == "__main__":
-    import sys
-    while 1 :
+    while 1:
         print("Saisisez une expression à tester : ")
         s = sys.stdin.readline()[:-1]
         print(main(s))
